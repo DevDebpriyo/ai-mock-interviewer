@@ -2,6 +2,7 @@ import { Toaster } from "sonner";
 import type { Metadata } from "next";
 import { Mona_Sans } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { Analytics } from "@vercel/analytics/next";
 
 import "./globals.css";
 
@@ -27,6 +28,7 @@ export default function RootLayout({
 
         <Toaster />
         <SpeedInsights />
+        <Analytics />
       </body>
     </html>
   );

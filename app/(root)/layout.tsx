@@ -3,6 +3,7 @@ import Image from "next/image";
 import { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { Analytics } from "@vercel/analytics/next";
 
 import { isAuthenticated } from "@/lib/actions/auth.action";
 
@@ -21,6 +22,7 @@ const Layout = async ({ children }: { children: ReactNode }) => {
 
       {children}
       <SpeedInsights />
+      <Analytics />
     </div>
   );
 };
