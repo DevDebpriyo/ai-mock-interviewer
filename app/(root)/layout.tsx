@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { ReactNode } from "react";
 import { redirect } from "next/navigation";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 import { isAuthenticated } from "@/lib/actions/auth.action";
 
@@ -19,6 +20,7 @@ const Layout = async ({ children }: { children: ReactNode }) => {
       </nav>
 
       {children}
+      <SpeedInsights />
     </div>
   );
 };
