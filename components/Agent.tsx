@@ -1,222 +1,127 @@
 "use client";
 
-import Image from "next/image";
-import { useState, useEffect } from "react";
+import "@livekit/components-styles";
+import {
+  LiveKitRoom,
+  RoomAudioRenderer,
+  ControlBar,
+} from "@livekit/components-react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
-import { cn } from "@/lib/utils";
-import { vapi } from "@/lib/vapi.sdk";
-import { interviewer } from "@/constants";
-import { createFeedback } from "@/lib/actions/general.action";
+import { Button } from "@/components/ui/button";
 
-enum CallStatus {
-  INACTIVE = "INACTIVE",
-  CONNECTING = "CONNECTING",
-  ACTIVE = "ACTIVE",
-  FINISHED = "FINISHED",
-}
-
-interface SavedMessage {
-  role: "user" | "system" | "assistant";
-  content: string;
+interface LiveKitAgentProps {
+  userId: string;
+  userName: string;
+  mode: "create" | "conduct";
+  roomName: string;
+  interviewId?: string;
 }
 
 const Agent = ({
-  userName,
   userId,
+  userName,
+  mode,
+  roomName,
   interviewId,
-  feedbackId,
-  type,
-  questions,
-}: AgentProps) => {
+}: LiveKitAgentProps) => {
   const router = useRouter();
-  const [callStatus, setCallStatus] = useState<CallStatus>(CallStatus.INACTIVE);
-  const [messages, setMessages] = useState<SavedMessage[]>([]);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [lastMessage, setLastMessage] = useState<string>("");
+  const [token, setToken] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "connecting" | "connected">(
+    "idle"
+  );
+  const [error, setError] = useState<string | null>(null);
+  const livekitUrl =
+    process.env.NEXT_PUBLIC_LIVEKIT_WS_URL ??
+    process.env.NEXT_PUBLIC_LIVEKIT_URL ??
+    process.env.LIVEKIT_URL;
 
   useEffect(() => {
-    const onCallStart = () => {
-      setCallStatus(CallStatus.ACTIVE);
-    };
+    setError(null);
+  }, [mode, interviewId, roomName]);
 
-    const onCallEnd = () => {
-      setCallStatus(CallStatus.FINISHED);
-    };
+  const handleDisconnected = useCallback(() => {
+    setToken(null);
+    setStatus("idle");
+    router.push("/");
+  }, [router]);
 
-    const onMessage = (message: Message) => {
-      if (message.type === "transcript" && message.transcriptType === "final") {
-        const newMessage = { role: message.role, content: message.transcript };
-        setMessages((prev) => [...prev, newMessage]);
-      }
-    };
-
-    const onSpeechStart = () => {
-      console.log("speech start");
-      setIsSpeaking(true);
-    };
-
-    const onSpeechEnd = () => {
-      console.log("speech end");
-      setIsSpeaking(false);
-    };
-
-    const onError = (error: Error) => {
-      console.log("Error:", error);
-    };
-
-    vapi.on("call-start", onCallStart);
-    vapi.on("call-end", onCallEnd);
-    vapi.on("message", onMessage);
-    vapi.on("speech-start", onSpeechStart);
-    vapi.on("speech-end", onSpeechEnd);
-    vapi.on("error", onError);
-
-    return () => {
-      vapi.off("call-start", onCallStart);
-      vapi.off("call-end", onCallEnd);
-      vapi.off("message", onMessage);
-      vapi.off("speech-start", onSpeechStart);
-      vapi.off("speech-end", onSpeechEnd);
-      vapi.off("error", onError);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (messages.length > 0) {
-      setLastMessage(messages[messages.length - 1].content);
-    }
-
-    const handleGenerateFeedback = async (messages: SavedMessage[]) => {
-      console.log("handleGenerateFeedback");
-
-      const { success, feedbackId: id } = await createFeedback({
-        interviewId: interviewId!,
-        userId: userId!,
-        transcript: messages,
-        feedbackId,
+  const startConversation = async () => {
+    setStatus("connecting");
+    try {
+      const response = await fetch("/api/livekit/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomName, userId, mode, interviewId }),
       });
 
-      if (success && id) {
-        router.push(`/interview/${interviewId}/feedback`);
-      } else {
-        console.log("Error saving feedback");
-        router.push("/");
-      }
-    };
-
-    if (callStatus === CallStatus.FINISHED) {
-      if (type === "generate") {
-        router.push("/");
-      } else {
-        handleGenerateFeedback(messages);
-      }
-    }
-  }, [messages, callStatus, feedbackId, interviewId, router, type, userId]);
-
-  const handleCall = async () => {
-    setCallStatus(CallStatus.CONNECTING);
-
-    if (type === "generate") {
-      await vapi.start(process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!, {
-        variableValues: {
-          username: userName,
-          userid: userId,
-        },
-      });
-    } else {
-      let formattedQuestions = "";
-      if (questions) {
-        formattedQuestions = questions
-          .map((question) => `- ${question}`)
-          .join("\n");
+      if (!response.ok) {
+        const body = await response.json();
+        throw new Error(body.error || "Unable to get LiveKit token");
       }
 
-      await vapi.start(interviewer, {
-        variableValues: {
-          questions: formattedQuestions,
-        },
-      });
+      const { token } = await response.json();
+      setToken(token);
+      setStatus("connected");
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Unable to start session");
+      setStatus("idle");
     }
   };
 
-  const handleDisconnect = () => {
-    setCallStatus(CallStatus.FINISHED);
-    vapi.stop();
-  };
+  if (!livekitUrl) {
+    return (
+      <p className="text-destructive">
+        Missing LiveKit websocket URL. Set NEXT_PUBLIC_LIVEKIT_WS_URL (or
+        NEXT_PUBLIC_LIVEKIT_URL) in your environment variables.
+      </p>
+    );
+  }
 
   return (
-    <>
-      <div className="call-view">
-        {/* AI Interviewer Card */}
-        <div className="card-interviewer">
-          <div className="avatar">
-            <Image
-              src="/ai-avatar.png"
-              alt="profile-image"
-              width={65}
-              height={54}
-              className="object-cover"
-            />
-            {isSpeaking && <span className="animate-speak" />}
-          </div>
-          <h3>AI Interviewer</h3>
+    <div className="card-border w-full">
+      <div className="card flex flex-col gap-6 p-6">
+        <div className="flex flex-col gap-1">
+          <h3 className="text-xl font-semibold">
+            {userName}, you&apos;re live with Prepwise
+          </h3>
+          <p className="text-light-100">
+            Mode: <span className="font-semibold capitalize">{mode}</span>
+          </p>
         </div>
 
-        {/* User Profile Card */}
-        <div className="card-border">
-          <div className="card-content">
-            <Image
-              src="/user-avatar.png"
-              alt="profile-image"
-              width={539}
-              height={539}
-              className="rounded-full object-cover size-[120px]"
-            />
-            <h3>{userName}</h3>
-          </div>
-        </div>
-      </div>
-
-      {messages.length > 0 && (
-        <div className="transcript-border">
-          <div className="transcript">
-            <p
-              key={lastMessage}
-              className={cn(
-                "transition-opacity duration-500 opacity-0",
-                "animate-fadeIn opacity-100"
-              )}
+        {!token && (
+          <div className="flex flex-col gap-3">
+            <Button
+              className="btn-primary"
+              onClick={startConversation}
+              disabled={status === "connecting"}
             >
-              {lastMessage}
-            </p>
+              {status === "connecting" ? "Connecting..." : "Start Session"}
+            </Button>
+            {error && <p className="text-destructive text-sm">{error}</p>}
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="w-full flex justify-center">
-        {callStatus !== "ACTIVE" ? (
-          <button className="relative btn-call" onClick={() => handleCall()}>
-            <span
-              className={cn(
-                "absolute animate-ping rounded-full opacity-75",
-                callStatus !== "CONNECTING" && "hidden"
-              )}
-            />
-
-            <span className="relative">
-              {callStatus === "INACTIVE" || callStatus === "FINISHED"
-                ? "Call"
-                : ". . ."}
-            </span>
-          </button>
-        ) : (
-          <button className="btn-disconnect" onClick={() => handleDisconnect()}>
-            End
-          </button>
+        {token && (
+          <LiveKitRoom
+            audio
+            video={false}
+            serverUrl={livekitUrl}
+            token={token}
+            connect
+            onDisconnected={handleDisconnected}
+            data-lk-theme="default"
+            className="w-full"
+          >
+            <RoomAudioRenderer />
+            <ControlBar controls={{ leave: true }} />
+          </LiveKitRoom>
         )}
       </div>
-    </>
+    </div>
   );
 };
 

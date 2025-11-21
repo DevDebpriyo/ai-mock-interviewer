@@ -28,7 +28,7 @@ interface Interview {
 interface CreateFeedbackParams {
   interviewId: string;
   userId: string;
-  transcript: { role: string; content: string }[];
+  transcript?: { role: string; content: string }[];
   feedbackId?: string;
 }
 
@@ -49,11 +49,10 @@ interface InterviewCardProps {
 
 interface AgentProps {
   userName: string;
-  userId?: string;
+  userId: string;
+  roomName: string;
+  mode: "create" | "conduct";
   interviewId?: string;
-  feedbackId?: string;
-  type: "generate" | "interview";
-  questions?: string[];
 }
 
 interface RouteParams {

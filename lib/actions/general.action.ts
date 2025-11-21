@@ -10,7 +10,30 @@ export async function createFeedback(params: CreateFeedbackParams) {
   const { interviewId, userId, transcript, feedbackId } = params;
 
   try {
-    const formattedTranscript = transcript
+    let transcriptData = transcript;
+
+    if (!transcriptData || transcriptData.length === 0) {
+      const answersSnapshot = await db
+        .collection("interviews")
+        .doc(interviewId)
+        .collection("answers")
+        .orderBy("sequence")
+        .get();
+
+      transcriptData = answersSnapshot.docs.flatMap((doc) => {
+        const data = doc.data();
+        return [
+          { role: "assistant", content: data.question },
+          { role: "user", content: data.answer },
+        ];
+      });
+    }
+
+    if (!transcriptData || transcriptData.length === 0) {
+      return { success: false };
+    }
+
+    const formattedTranscript = transcriptData
       .map(
         (sentence: { role: string; content: string }) =>
           `- ${sentence.role}: ${sentence.content}\n`
@@ -18,7 +41,7 @@ export async function createFeedback(params: CreateFeedbackParams) {
       .join("");
 
     const { object } = await generateObject({
-      model: google("gemini-2.0-flash-001", {
+      model: google("gemini-2.5-flash-lite", {
         structuredOutputs: false,
       }),
       schema: feedbackSchema,
